@@ -6,6 +6,7 @@ import com.secnium.iast.agent.monitor.MonitorDaemonThread;
 import com.secnium.iast.agent.report.AgentRegisterReport;
 import com.secnium.iast.agent.util.LogUtils;
 import java.lang.instrument.Instrumentation;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author dongzhiyong@huoxian.cn
@@ -26,6 +27,7 @@ public class AgentLauncher {
         System.setProperty("sun.net.http.allowRestrictedHeaders", "true");
         LAUNCH_MODE = LAUNCH_MODE_AGENT;
         try {
+            TimeUnit.SECONDS.sleep(10);
             install(inst);
         } catch (Exception e) {
             e.printStackTrace();
