@@ -12,6 +12,7 @@ import io.dongtai.log.DongTaiLog;
 import java.net.*;
 import java.util.Enumeration;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
@@ -37,6 +38,8 @@ public class AgentRegisterReport {
         object.put(Constant.KEY_AGENT_TOKEN, AgentRegisterReport.getAgentToken());
         object.put(Constant.KEY_AGENT_VERSION, Constant.AGENT_VERSION_VALUE);
         object.put(Constant.KEY_PROJECT_NAME, getProjectName());
+        object.put(Constant.KEY_CLUSTER_NAME, getClusterName());
+        object.put(Constant.KEY_CLUSTER_VERSION, getClusterVersion());
         object.put(Constant.KEY_PID, EngineManager.getPID());
         object.put(Constant.KEY_HOSTNAME, AgentRegisterReport.getInternalHostName());
         object.put(Constant.KEY_LANGUAGE, Constant.LANGUAGE);
@@ -146,15 +149,34 @@ public class AgentRegisterReport {
     }
 
     /**
+     * 获取集群名称,用于集群对应多个分布式实例的应用agent管理
+     *
+     * @return {@link String}
+     */
+    private String getClusterName() {
+        IastProperties cfg = IastProperties.getInstance();
+        return cfg.getClusterName();
+    }
+
+    /**
+     * 获取集群版本,用于集群对应多个分布式实例的应用agent管理
+     *
+     * @return {@link String}
+     */
+    private String getClusterVersion() {
+        IastProperties cfg = IastProperties.getInstance();
+        return cfg.getClusterVersion();
+    }
+
+    /**
      * 读取网卡信息
      *
      * @return
      */
     private String readIpInfo() {
         try {
-            StringBuilder sb = new StringBuilder();
-            boolean first = true;
             Enumeration<?> interfaces = NetworkInterface.getNetworkInterfaces();
+            JSONArray network = new JSONArray();
             while (interfaces.hasMoreElements()) {
                 NetworkInterface networkInterface = (NetworkInterface) interfaces.nextElement();
                 if (networkInterface.isLoopback() || !networkInterface.isUp()) {
@@ -166,48 +188,42 @@ public class AgentRegisterReport {
                     if (inetAddress instanceof Inet6Address) {
                         continue;
                     }
-                    if (first) {
-                        sb.append("{\"name\"").append(":").append("\"").append(networkInterface.getDisplayName())
-                                .append("\"");
-                        sb.append(",\"ip\"").append(":").append("\"").append(inetAddress.getHostAddress())
-                                .append("\"}");
-                        first = false;
-                    } else {
-                        sb.append(",{\"name\"").append(":").append("\"").append(networkInterface.getDisplayName())
-                                .append("\"");
-                        sb.append(",\"ip\"").append(":").append("\"").append(inetAddress.getHostAddress())
-                                .append("\"}");
+                    JSONObject jsonObject = new JSONObject();
+                    String displayName = networkInterface.getDisplayName();
+                    String hostAddress = inetAddress.getHostAddress();
+                    jsonObject.put("name",displayName);
+                    jsonObject.put("ip",hostAddress);
+                    if (displayName.startsWith("en")){
+                        jsonObject.put("isAddress","1");
+                    }else {
+                        jsonObject.put("isAddress","0");
                     }
+                    network.put(jsonObject);
                 }
             }
-            return sb.toString();
+            return network.toString();
         } catch (SocketException e) {
             return "{}";
         }
     }
 
-    public void register() {
+    public void register(){
         try {
             if (server == null) {
                 DongTaiLog.warn("Can't Recognize Web Service");
                 return;
             } else {
-                DongTaiLog.info("DongTai will install for {} Service", server.getName());
+                DongTaiLog.debug("DongTai will install for {} Service", server.getName());
             }
             String msg = generateAgentRegisterMsg();
             StringBuilder responseRaw = HttpClientUtils.sendPost(Constant.API_AGENT_REGISTER, msg);
             if (!isRegistered()) {
                 setAgentData(responseRaw);
             }
-        } catch (SocketTimeoutException e) {
-            DongTaiLog.error("Agent registration to {} failed 10 seconds later, Reason: {}, token: {}",
-                    IastProperties.getInstance().getBaseUrl(), IastProperties.getInstance().getIastServerToken());
         } catch (NullPointerException e) {
             DongTaiLog.error("Agent registration to {} failed, Token: {}, Reason: {}", IastProperties.getInstance().getBaseUrl(), IastProperties.getInstance().getIastServerToken(), e.getMessage());
-        } catch (ConnectException e) {
-            DongTaiLog.error("Agent registration failed, Reason: Failed to connect to {}, please check with `curl -v {}`", IastProperties.getInstance().getBaseUrl(), IastProperties.getInstance().getBaseUrl());
         } catch (Exception e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
             DongTaiLog.error("Agent registration to {} failed 10 seconds later, cause: {}, token: {}",
                     IastProperties.getInstance().getBaseUrl(), e.getMessage(), IastProperties.getInstance().getIastServerToken());
         }
@@ -225,12 +241,18 @@ public class AgentRegisterReport {
      * @param responseRaw
      */
     private void setAgentData(StringBuilder responseRaw) {
-        JSONObject responseObj = new JSONObject(responseRaw.toString());
-        Integer status = (Integer) responseObj.get("status");
-        if (status == 201) {
-            JSONObject data = (JSONObject) responseObj.get("data");
-            agentId = (Integer) data.get("id");
-            coreRegisterStart = (Integer) data.get("coreAutoStart");
+        try {
+            JSONObject responseObj = new JSONObject(responseRaw.toString());
+            Integer status = (Integer) responseObj.get("status");
+            if (status == 201) {
+                JSONObject data = (JSONObject) responseObj.get("data");
+                agentId = (Integer) data.get("id");
+                coreRegisterStart = (Integer) data.get("coreAutoStart");
+            }else {
+                DongTaiLog.error("Register msg: "+ responseRaw);
+            }
+        }catch (Exception e){
+            DongTaiLog.error("DongTai server no response.");
         }
     }
 

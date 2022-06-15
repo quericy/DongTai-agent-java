@@ -1,12 +1,8 @@
 package io.dongtai.iast.agent;
 
 import java.io.*;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.util.Arrays;
+import java.util.UUID;
 
 import io.dongtai.iast.agent.util.FileUtils;
 import io.dongtai.log.DongTaiLog;
@@ -30,8 +26,13 @@ public class Agent {
         attachOptions.addOption(build("app_name", "app_name", "optional: DongTai Application Name, default: ExampleApplication"));
         attachOptions.addOption(build("app_create", "app_create", "optional: DongTai Application Auto Create, default: false"));
         attachOptions.addOption(build("app_version", "app_version", "optional: DongTai Application Version, default: v1.0"));
+        attachOptions.addOption(build("cluster_name", "cluster_name", "optional: Application Cluster Name"));
+        attachOptions.addOption(build("cluster_version", "cluster_version", "optional: Application Cluster Version"));
         attachOptions.addOption(build("dongtai_server", "dongtai_server", "optional: DongTai server url"));
         attachOptions.addOption(build("dongtai_token", "dongtai_token", "optional: DongTai server token"));
+        attachOptions.addOption(build("server_package", "server_package", "optional: DongTai core package download way."));
+        attachOptions.addOption(build("log_level", "log_level", "optional: DongTai agent log print level."));
+        attachOptions.addOption(build("log_path", "log_path", "optional: DongTai agent log print path."));
 
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
@@ -61,11 +62,26 @@ public class Agent {
             if (result.hasOption("app_version")) {
                 attachArgs.append("&appVersion=").append(result.getOptionValue("app_version"));
             }
+            if (result.hasOption("cluster_name")) {
+                attachArgs.append("&clusterName=").append(result.getOptionValue("cluster_name"));
+            }
+            if (result.hasOption("cluster_version")) {
+                attachArgs.append("&clusterVersion=").append(result.getOptionValue("cluster_version"));
+            }
             if (result.hasOption("dongtai_server")) {
                 attachArgs.append("&dongtaiServer=").append(result.getOptionValue("dongtai_server"));
             }
             if (result.hasOption("dongtai_token")) {
                 attachArgs.append("&dongtaiToken=").append(result.getOptionValue("dongtai_token"));
+            }
+            if (result.hasOption("server_package")) {
+                attachArgs.append("&serverPackage=").append(result.getOptionValue("server_package"));
+            }
+            if (result.hasOption("log_level")) {
+                attachArgs.append("&logLevel=").append(result.getOptionValue("log_level"));
+            }
+            if (result.hasOption("log_path")) {
+                attachArgs.append("&logPath=").append(result.getOptionValue("log_path"));
             }
             return new String[]{pid, attachArgs.toString()};
         } else {
@@ -92,9 +108,9 @@ public class Agent {
                 DongTaiLog.error("attach failure, please try again with command: {}", Arrays.toString(execution));
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            DongTaiLog.error("io.dongtai.iast.agent.Agent.doAttach(java.lang.String,java.lang.String)",e);
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            DongTaiLog.error("io.dongtai.iast.agent.Agent.doAttach(java.lang.String,java.lang.String)",e);
         }
     }
 
@@ -102,23 +118,23 @@ public class Agent {
         return OS_NAME.indexOf("linux") >= 0;
     }
 
-    private static boolean isWindows() {
+    public static boolean isWindows() {
         return OS_NAME.indexOf("windows") >= 0;
     }
 
-    private static boolean isMacOs() {
+    public static boolean isMacOs() {
         return OS_NAME.indexOf("mac") >= 0 && OS_NAME.indexOf("os") > 0;
     }
 
     private static void extractJattach() throws IOException {
         if (isWindows()) {
-            JATTACH_FILE = System.getProperty("java.io.tmpdir") + File.separator + "iast" + File.separator + "jattach.exe";
+            JATTACH_FILE = System.getProperty("java.io.tmpdir")+ File.separator + "iast"+System.currentTimeMillis() + File.separator + "jattach.exe";
             FileUtils.getResourceToFile("bin/jattach.exe", JATTACH_FILE);
         } else if (isMacOs()) {
-            JATTACH_FILE = System.getProperty("java.io.tmpdir") + File.separator + "iast" + File.separator + "jattach-mac";
+            JATTACH_FILE = System.getProperty("java.io.tmpdir")+ File.separator + "iast"+System.currentTimeMillis() + File.separator + "jattach-mac";
             FileUtils.getResourceToFile("bin/jattach-mac", JATTACH_FILE);
         } else {
-            JATTACH_FILE = System.getProperty("java.io.tmpdir") + File.separator + "iast" + File.separator + "jattach-linux";
+            JATTACH_FILE = System.getProperty("java.io.tmpdir")+ File.separator + "iast"+System.currentTimeMillis() + File.separator + "jattach-linux";
             FileUtils.getResourceToFile("bin/jattach-linux", JATTACH_FILE);
         }
         if ((new File(JATTACH_FILE)).setExecutable(true)) {
@@ -143,9 +159,9 @@ public class Agent {
                 doAttach(agentArgs[0], agentArgs[1]);
             }
         } catch (ParseException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
         } catch (IOException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
         }
     }
 

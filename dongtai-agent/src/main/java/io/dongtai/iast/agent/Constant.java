@@ -4,7 +4,7 @@ package io.dongtai.iast.agent;
  * @author dongzhiyong@huoxian.cn
  */
 public class Constant {
-    public static final String AGENT_VERSION_VALUE = "v1.3.1";
+    public static final String AGENT_VERSION_VALUE = "v1.7.0";
     public static final String LANGUAGE = "JAVA";
 
     public final static String API_AGENT_REGISTER = "/api/v1/agent/register";
@@ -23,6 +23,8 @@ public class Constant {
     public static final String KEY_HOSTNAME = "hostname";
     public static final String KEY_SERVER_ENV = "serverEnv";
     public static final String KEY_PROJECT_NAME = "projectName";
+    public static final String KEY_CLUSTER_NAME = "clusterName";
+    public static final String KEY_CLUSTER_VERSION = "clusterVersion";
     public static final String KEY_AUTO_CREATE_PROJECT = "autoCreateProject";
     public static final String KEY_PROJECT_VERSION = "projectVersion";
     public static final String KEY_LANGUAGE = "language";
@@ -34,7 +36,15 @@ public class Constant {
     public static final String KEY_MEMORY = "memory";
     public static final String KEY_CPU = "cpu";
     public static final String KEY_DISK = "disk";
+    public static final String KEY_PERFORMANCE = "performance";
+    public static final String KEY_CORE_INSTALLED = "isCoreInstalled";
+    public static final String KEY_CORE_RUNNING = "isCoreRunning";
     public static final String KEY_RETURN_QUEUE = "returnQueue";
+
+    // 线程异常上报
+    public static final int REPORT_ERROR_THREAD = 0x45;
+    public static final String KEY_NOT_EXIST_THREADS = "notExistThread";
+    public static final String KEY_HIGH_CPU_THREADS = "highCpuThread";
 
     public static final String THREAD_PREFIX = "DongTai-IAST-";
 

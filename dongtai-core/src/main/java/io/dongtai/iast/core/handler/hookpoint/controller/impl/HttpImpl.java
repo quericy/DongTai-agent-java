@@ -29,7 +29,7 @@ public class HttpImpl {
     public static File IAST_REQUEST_JAR_PACKAGE;
 
     static {
-        IAST_REQUEST_JAR_PACKAGE = new File(System.getProperty("java.io.tmpdir") + File.separator + "dongtai-api.jar");
+        IAST_REQUEST_JAR_PACKAGE = new File(System.getProperty("java.io.tmpdir.dongtai") + "iast" + File.separator + "dongtai-api.jar");
         if (!IAST_REQUEST_JAR_PACKAGE.exists()) {
             HttpClientUtils.downloadRemoteJar("/api/v1/engine/download?engineName=dongtai-api", IAST_REQUEST_JAR_PACKAGE.getAbsolutePath());
         }
@@ -47,25 +47,29 @@ public class HttpImpl {
                         new URL[]{IAST_REQUEST_JAR_PACKAGE.toURI().toURL()}
                 );
                 CLASS_OF_SERVLET_PROXY = iastClassLoader.loadClass("io.dongtai.api.ServletProxy");
+                if (CLASS_OF_SERVLET_PROXY == null) {
+                    return;
+                }
                 cloneRequestMethod = CLASS_OF_SERVLET_PROXY
                         .getDeclaredMethod("cloneRequest", Object.class, boolean.class);
                 cloneResponseMethod = CLASS_OF_SERVLET_PROXY
                         .getDeclaredMethod("cloneResponse", Object.class, boolean.class);
             }
-        } catch (MalformedURLException e) {
-            e.printStackTrace();
-        } catch (NoSuchMethodException e) {
-            e.printStackTrace();
+        } catch (MalformedURLException | NoSuchMethodException e) {
+            DongTaiLog.error("io.dongtai.iast.core.handler.hookpoint.controller.impl.HttpImpl.createClassLoader(java.lang.Object)",e);
         }
     }
 
     private static void loadCloneResponseMethod() {
         if (cloneResponseMethod == null) {
             try {
+                if (CLASS_OF_SERVLET_PROXY == null) {
+                    return;
+                }
                 cloneResponseMethod = CLASS_OF_SERVLET_PROXY
                         .getDeclaredMethod("cloneResponse", Object.class, boolean.class);
             } catch (NoSuchMethodException e) {
-                e.printStackTrace();
+                DongTaiLog.error(e);
             }
         }
     }
@@ -123,9 +127,8 @@ public class HttpImpl {
         try {
             Method methodOfRequestMeta = request.getClass().getDeclaredMethod("getPostBody");
             return (String) methodOfRequestMeta.invoke(request);
-        } catch (NoSuchMethodException ignored) {
-        } catch (IllegalAccessException ignored) {
-        } catch (InvocationTargetException ignored) {
+        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            DongTaiLog.error(e);
         }
         return null;
     }
@@ -135,9 +138,8 @@ public class HttpImpl {
         try {
             methodOfRequestMeta = response.getClass().getDeclaredMethod("getResponseMeta");
             return (Map<String, Object>) methodOfRequestMeta.invoke(response);
-        } catch (NoSuchMethodException ignored) {
-        } catch (IllegalAccessException ignored) {
-        } catch (InvocationTargetException ignored) {
+        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            DongTaiLog.error(e);
         }
         return null;
     }
@@ -149,11 +151,12 @@ public class HttpImpl {
      */
     public static void solveHttp(MethodEvent event)
             throws InvocationTargetException, IllegalAccessException, NoSuchMethodException {
-        if (DongTaiLog.isDebugEnabled()) {
-            DongTaiLog.debug(EngineManager.SCOPE_TRACKER.get().toString());
-        }
-
+        DongTaiLog.debug(EngineManager.SCOPE_TRACKER.get().toString());
         Map<String, Object> requestMeta = getRequestMeta(event.argumentArray[0]);
+        Boolean isReplay = (Boolean) requestMeta.get("replay-request");
+        if (isReplay){
+            EngineManager.ENTER_REPLAY_ENTRYPOINT.enterEntry();
+        }
         // todo Consider increasing the capture of html request responses
         if (ConfigMatcher.getInstance().disableExtension((String) requestMeta.get("requestURI"))) {
             return;
@@ -164,11 +167,11 @@ public class HttpImpl {
 
         // todo: add custom header escape
         EngineManager.enterHttpEntry(requestMeta);
-
-        if (DongTaiLog.isDebugEnabled()) {
-            DongTaiLog.debug("HTTP Request:{} {} from: {}", requestMeta.get("method"), requestMeta.get("requestURI"),
-                    event.signature);
-        }
+        DongTaiLog.debug("HTTP Request:{} {} from: {}", requestMeta.get("method"), requestMeta.get("requestURI"),
+                event.signature);
     }
 
+    public static IastClassLoader getClassLoader() {
+        return iastClassLoader;
+    }
 }

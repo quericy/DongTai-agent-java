@@ -68,7 +68,7 @@ Please refer to the [Quick Start](https://doc.dongtai.io).
 5. Copy `dongtai-core.jar`、`dongtai-spy.jar`、`dongtai-servlet.jar` to the system temporary directory. Get the system temporary directory to run the following Java code:
 
    ```
-   System.getProperty("java.io.tmpdir");
+   System.getProperty("java.io.tmpdir.dongtai");
    ```
 
 6. Run the application and test the code (for example, SpringBoot) : `java -javaagent:/path/to/dongtai-agent.jar -Ddongtai.debug=true -jar app.jar`
@@ -77,7 +77,5 @@ Please refer to the [Quick Start](https://doc.dongtai.io).
 
 ### Supported Java versions and middleware
 
-- Java 1.6+
+- Java 1.8+
 - Tomcat, Jetty, WebLogic, WebSphere, SpringBoot and Mainstream software and middleware.
-
-<img src="https://static.scarf.sh/a.png?x-pxid=0c73ae79-fd43-46b9-a449-b8fcc259db85" />

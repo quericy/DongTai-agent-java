@@ -1,14 +1,12 @@
 package io.dongtai.iast.core.utils.matcher;
 
-import io.dongtai.iast.core.service.ErrorLogReport;
 import io.dongtai.iast.core.utils.ConfigUtils;
 import io.dongtai.iast.core.utils.PropertyUtils;
-import io.dongtai.iast.core.utils.ThrowableUtils;
 import io.dongtai.log.DongTaiLog;
 import org.apache.commons.lang3.StringUtils;
 
 import java.lang.instrument.Instrumentation;
-import java.security.MessageDigest;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -33,6 +31,7 @@ public class ConfigMatcher {
     private Instrumentation inst;
 
     private final Set<String> BLACK_URL;
+    public final Set<String> FALLBACK_URL = new HashSet<>();
 
     public static ConfigMatcher getInstance() {
         if (null == INSTANCE) {
@@ -95,12 +94,16 @@ public class ConfigMatcher {
                             return true;
                         }
                     default:
-                        continue;
+                }
+            }
+            for (String string : FALLBACK_URL) {
+                if (uri.endsWith(string)){
+                    return true;
                 }
             }
         } catch (Exception e) {
             DongTaiLog.info("dongtai getBalckurl error");
-            ErrorLogReport.sendErrorLog(ThrowableUtils.getStackTrace(e));
+            DongTaiLog.error(e);
         }
         return false;
     }

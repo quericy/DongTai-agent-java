@@ -25,6 +25,9 @@ import java.util.jar.JarFile;
 public class EngineManager {
 
     private static final String ENGINE_ENTRYPOINT_CLASS = "com.secnium.iast.core.AgentEngine";
+    private static final String FALLBACK_MANAGER_CLASS = "io.dongtai.iast.core.bytecode.enhance.plugin.fallback.FallbackManager";
+    private static final String REMOTE_CONFIG_UTILS_CLASS = "io.dongtai.iast.core.utils.config.RemoteConfigUtils";
+    private static final String ENGINE_MANAGER_CLASS = "io.dongtai.iast.core.EngineManager";
     private static final String INJECT_PACKAGE_REMOTE_URI = "/api/v1/engine/download?engineName=dongtai-spy";
     private static final String ENGINE_PACKAGE_REMOTE_URI = "/api/v1/engine/download?engineName=dongtai-core";
     private static final String API_PACKAGE_REMOTE_URI = "/api/v1/engine/download?engineName=dongtai-api";
@@ -34,6 +37,7 @@ public class EngineManager {
 
     private final Instrumentation inst;
     private int runningStatus;
+    private static boolean isCoreStop;
     private final IastProperties properties;
     private final String launchMode;
     private Class<?> classOfEngine;
@@ -72,6 +76,57 @@ public class EngineManager {
     }
 
     /**
+     * 在核心包中加载并获取降级管理器
+     */
+    public static Class<?> getFallbackManagerClass() throws ClassNotFoundException {
+        if (IAST_CLASS_LOADER == null) {
+            return null;
+        }
+        return IAST_CLASS_LOADER.loadClass(FALLBACK_MANAGER_CLASS);
+    }
+
+    /**
+     * 检查核心是否已安装
+     *
+     * @return boolean 核心是否已安装
+     */
+    public static boolean checkCoreIsInstalled() {
+        return IAST_CLASS_LOADER != null;
+    }
+
+    /**
+     * 检查核心是否在运行中
+     * 当引擎被关闭/降级/卸载及其他反射调用失败的情况时，isCoreRunning也返回false
+     *
+     * @return boolean 核心是否在运行中
+     */
+    public static boolean checkCoreIsRunning() {
+        if (IAST_CLASS_LOADER == null) {
+            return false;
+        }
+        try {
+            final Class<?> engineManagerClass = IAST_CLASS_LOADER.loadClass(ENGINE_MANAGER_CLASS);
+            if (engineManagerClass == null) {
+                return false;
+            }
+            return (Boolean) engineManagerClass.getMethod("isEngineRunning").invoke(null);
+        } catch (Throwable e) {
+            DongTaiLog.info("checkCoreIsRunning failed, msg:{}, cause:{}", e.getMessage(), e.getCause());
+            return false;
+        }
+    }
+
+    /**
+     * 在核心包中加载并获取远端配置工具类
+     */
+    public static Class<?> getRemoteConfigUtils() throws ClassNotFoundException {
+        if (IAST_CLASS_LOADER == null) {
+            return null;
+        }
+        return IAST_CLASS_LOADER.loadClass(REMOTE_CONFIG_UTILS_CLASS);
+    }
+
+    /**
      * 获取IAST引擎管理器的单例对象
      *
      * @return IAST引擎管理器的实例化对象
@@ -93,7 +148,7 @@ public class EngineManager {
      * @return engine包的本地保存路径
      */
     private static String getEnginePackageCachePath() {
-        return System.getProperty("java.io.tmpdir") + File.separator + "iast" + File.separator + "dongtai-core.jar";
+        return System.getProperty("java.io.tmpdir.dongtai") + "iast" + File.separator + "dongtai-core.jar";
     }
 
     /**
@@ -102,7 +157,7 @@ public class EngineManager {
      * @return inject包的本地路径
      */
     private static String getInjectPackageCachePath() {
-        return System.getProperty("java.io.tmpdir") + File.separator + "iast" + File.separator + "dongtai-spy.jar";
+        return System.getProperty("java.io.tmpdir.dongtai") + "iast" + File.separator + "dongtai-spy.jar";
     }
 
     /**
@@ -111,7 +166,11 @@ public class EngineManager {
      * @return inject包的本地路径
      */
     private static String getApiPackagePath() {
-        return System.getProperty("java.io.tmpdir") + File.separator + "iast" + File.separator + "dongtai-api.jar";
+        return System.getProperty("java.io.tmpdir.dongtai") + "iast" + File.separator + "dongtai-api.jar";
+    }
+
+    private static String getGrpcPackagePath() {
+        return System.getProperty("java.io.tmpdir.dongtai") + "iast" + File.separator + "dongtai-grpc.jar";
     }
 
 
@@ -159,6 +218,7 @@ public class EngineManager {
                 while ((bytesRead = in.read(dataBuffer, 0, 1024)) != -1) {
                     fileOutputStream.write(dataBuffer, 0, bytesRead);
                 }
+                dataBuffer = null;
                 in.close();
                 fileOutputStream.close();
                 DongTaiLog.info("The remote file " + fileUrl + " was successfully written to the local cache.");
@@ -177,9 +237,14 @@ public class EngineManager {
      */
     public boolean downloadPackageFromServer() {
         String baseUrl = properties.getBaseUrl();
-        return downloadJarPackageToCacheFromUrl(baseUrl + INJECT_PACKAGE_REMOTE_URI, getInjectPackageCachePath()) &&
-                downloadJarPackageToCacheFromUrl(baseUrl + ENGINE_PACKAGE_REMOTE_URI, getEnginePackageCachePath()) &&
-                downloadJarPackageToCacheFromUrl(baseUrl + API_PACKAGE_REMOTE_URI, getApiPackagePath());
+        // 自定义jar下载地址
+        String spyJarUrl = "".equals(properties.getCustomSpyJarUrl()) ? baseUrl + INJECT_PACKAGE_REMOTE_URI : properties.getCustomSpyJarUrl();
+        String coreJarUrl = "".equals(properties.getCustomCoreJarUrl()) ? baseUrl + ENGINE_PACKAGE_REMOTE_URI : properties.getCustomCoreJarUrl();
+        String apiJarUrl = "".equals(properties.getCustomApiJarUrl()) ? baseUrl + API_PACKAGE_REMOTE_URI : properties.getCustomApiJarUrl();
+        return downloadJarPackageToCacheFromUrl(spyJarUrl, getInjectPackageCachePath()) &&
+                downloadJarPackageToCacheFromUrl(coreJarUrl, getEnginePackageCachePath()) &&
+                downloadJarPackageToCacheFromUrl(apiJarUrl, getApiPackagePath()) &&
+                downloadJarPackageToCacheFromUrl(baseUrl + "/api/v1/engine/download?engineName=dongtai-grpc", getGrpcPackagePath());
     }
 
     /**
@@ -192,9 +257,10 @@ public class EngineManager {
         try {
             return FileUtils.getResourceToFile("bin/dongtai-spy.jar", getInjectPackageCachePath()) &&
                     FileUtils.getResourceToFile("bin/dongtai-core.jar", getEnginePackageCachePath()) &&
-                    FileUtils.getResourceToFile("bin/dongtai-api.jar", getApiPackagePath());
+                    FileUtils.getResourceToFile("bin/dongtai-api.jar", getApiPackagePath()) &&
+                    FileUtils.getResourceToFile("bin/dongtai-grpc.jar", getGrpcPackagePath());
         } catch (IOException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
         }
         return false;
     }
@@ -206,12 +272,16 @@ public class EngineManager {
         String enginePackage = getEnginePackageCachePath();
         String apiPackage = getApiPackagePath();
         if (properties.isDebug()) {
-            DongTaiLog.info("current mode: debug, try to read package from directory {}", System.getProperty("java.io.tmpdir"));
+            DongTaiLog.info("current mode: debug, try to read package from directory {}", System.getProperty("java.io.tmpdir.dongtai"));
             if ((new File(spyPackage)).exists() && (new File(enginePackage)).exists() && (new File(apiPackage)).exists()) {
                 return true;
             }
         }
-        return extractPackageFromAgent() || downloadPackageFromServer();
+        if(properties.getIsDownloadPackage().equals("true")){
+            return downloadPackageFromServer();
+        }else {
+            return extractPackageFromAgent();
+        }
     }
 
     public boolean install() {
@@ -230,15 +300,18 @@ public class EngineManager {
                     String.class)
                     .invoke(null, launchMode, this.properties.getPropertiesFilePath(),
                             AgentRegisterReport.getAgentFlag(), inst, agentPath);
+            setRunningStatus(0);
+            setCoreStop(false);
             return true;
         } catch (IOException e) {
             DongTaiLog.error("DongTai engine start failed, Reason: dongtai-spy.jar or dongtai-core.jar open failed. path: \n\tdongtai-core.jar: " + corePackage + "\n\tdongtai-spy.jar: " + spyPackage);
         } catch (ClassNotFoundException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
             DongTaiLog.error("ClassNotFoundException: DongTai engine start failed, please contact staff for help.");
         } catch (Throwable throwable) {
             DongTaiLog.error("Throwable: DongTai engine start failed, please contact staff for help.");
-            throwable.printStackTrace();
+            DongTaiLog.error(throwable);
+
         }
         return false;
     }
@@ -252,21 +325,23 @@ public class EngineManager {
             if (classOfEngine != null) {
                 classOfEngine.getMethod("start").invoke(null);
                 DongTaiLog.info("DongTai engine start successfully.");
+                setRunningStatus(0);
+                setCoreStop(false);
                 return true;
             }
             return false;
         } catch (InvocationTargetException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
             DongTaiLog.error("DongTai engine start failed, please contact staff for help.");
         } catch (NoSuchMethodException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
             DongTaiLog.error("DongTai engine start failed, please contact staff for help.");
         } catch (IllegalAccessException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
             DongTaiLog.error("DongTai engine start failed, please contact staff for help.");
         } catch (Throwable throwable) {
             DongTaiLog.error("DongTai engine start failed, please contact staff for help.");
-            throwable.printStackTrace();
+            DongTaiLog.error(throwable);
         }
         return false;
     }
@@ -282,6 +357,8 @@ public class EngineManager {
             if (classOfEngine != null) {
                 classOfEngine.getMethod("stop").invoke(null);
                 DongTaiLog.info("DongTai engine stop successfully.");
+                setRunningStatus(1);
+                setCoreStop(true);
                 return true;
             }
             return false;
@@ -295,10 +372,10 @@ public class EngineManager {
             DongTaiLog.error("DongTai engine stop failed, please contact staff for help.");
         } catch (IllegalAccessException e) {
             DongTaiLog.error("DongTai engine stop failed, please contact staff for help.");
-            e.printStackTrace();
+            DongTaiLog.error(e);
         } catch (Throwable throwable) {
             DongTaiLog.error("DongTai engine stop failed, please contact staff for help.");
-            throwable.printStackTrace();
+            DongTaiLog.error(throwable);
         }
         return false;
     }
@@ -310,6 +387,8 @@ public class EngineManager {
      */
     public synchronized boolean uninstall() {
         if (null == IAST_CLASS_LOADER) {
+            setRunningStatus(1);
+            setCoreStop(true);
             return true;
         }
 
@@ -319,17 +398,19 @@ public class EngineManager {
                         .invoke(null, launchMode, this.properties.getPropertiesFilePath(), inst);
             }
         } catch (IllegalAccessException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
         } catch (InvocationTargetException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
         } catch (NoSuchMethodException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
         }
 
         // 关闭SandboxClassLoader
         classOfEngine = null;
         IAST_CLASS_LOADER.closeIfPossible();
         IAST_CLASS_LOADER = null;
+        setRunningStatus(1);
+        setCoreStop(true);
         return true;
     }
 
@@ -339,5 +420,13 @@ public class EngineManager {
             PID = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
         }
         return PID;
+    }
+
+    public static boolean isCoreStop() {
+        return isCoreStop;
+    }
+
+    public static void setCoreStop(boolean coreStop) {
+        isCoreStop = coreStop;
     }
 }

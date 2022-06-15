@@ -1,6 +1,7 @@
 package io.dongtai.iast.agent.middlewarerecognition.dubbo;
 
 import io.dongtai.iast.agent.middlewarerecognition.IServer;
+import io.dongtai.log.DongTaiLog;
 
 import java.lang.management.RuntimeMXBean;
 
@@ -8,7 +9,7 @@ public class DubboService implements IServer {
     @Override
     public boolean isMatch(RuntimeMXBean paramRuntimeMXBean, ClassLoader loader) {
         try {
-            loader.loadClass("org.apache.dubbo.monitor.support.MonitorFilter");
+            loader.loadClass(" org.apache.dubbo.monitor.support.MonitorFilter".substring(1));
             return true;
         } catch (Exception ignored) {
         }

@@ -1,22 +1,22 @@
 package io.dongtai.iast.core;
 
+import io.dongtai.iast.core.bytecode.enhance.plugin.fallback.FallbackManager;
+import io.dongtai.iast.core.bytecode.enhance.plugin.fallback.report.HookPointRateLimitReport;
+import io.dongtai.iast.core.bytecode.enhance.plugin.fallback.FallbackSwitch;
 import io.dongtai.iast.core.handler.context.ContextManager;
 import io.dongtai.iast.core.handler.hookpoint.IastServer;
 import io.dongtai.iast.core.handler.hookpoint.models.MethodEvent;
-import io.dongtai.iast.core.utils.threadlocal.BooleanThreadLocal;
-import io.dongtai.iast.core.utils.threadlocal.IastScopeTracker;
-import io.dongtai.iast.core.utils.threadlocal.IastServerPort;
-import io.dongtai.iast.core.utils.threadlocal.IastTaintHashCodes;
-import io.dongtai.iast.core.utils.threadlocal.IastTaintPool;
-import io.dongtai.iast.core.utils.threadlocal.IastTrackMap;
-import io.dongtai.iast.core.utils.threadlocal.RequestContext;
+import io.dongtai.iast.core.service.ServerAddressReport;
+import io.dongtai.iast.core.utils.config.RemoteConfigUtils;
+import io.dongtai.iast.core.utils.threadlocal.*;
 import io.dongtai.iast.core.service.ServiceFactory;
 import io.dongtai.iast.core.utils.PropertyUtils;
+import io.dongtai.log.DongTaiLog;
 
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 存储全局信息
@@ -41,17 +41,24 @@ public class EngineManager {
      * 标记是否位于 IAST 的代码中，如果该值为 true 表示 iast 在运行中；如果 该值为 false 表示当前位置在iast的代码中，所有iast逻辑都bypass，直接退出
      */
     private static final BooleanThreadLocal DONGTAI_STATE = new BooleanThreadLocal(false);
+    /**
+     * 限制器统一管理器
+     */
+    private FallbackManager fallbackManager;
+
     public static IastServer SERVER;
 
     private static boolean logined = false;
-    private static int reqCounts = 0;
-    private static int enableLingzhi = 0;
+    private static final AtomicInteger reqCounts = new AtomicInteger(0);
+    public static int enableDongTai = 0;
 
-    public static void turnOnLingzhi() {
+    public static final BooleanThreadLocal ENTER_REPLAY_ENTRYPOINT = new BooleanThreadLocal(false);
+
+    public static void turnOnDongTai() {
         DONGTAI_STATE.set(true);
     }
 
-    public static void turnOffLingzhi() {
+    public static void turnOffDongTai() {
         DONGTAI_STATE.set(false);
     }
 
@@ -60,9 +67,28 @@ public class EngineManager {
      *
      * @return
      */
-    public static Boolean isLingzhiRunning() {
+    public static Boolean isDongTaiRunning() {
         Boolean status = DONGTAI_STATE.get();
         return status != null && status;
+    }
+
+    /**
+     * hook点是否降级
+     */
+    public static boolean isHookPointFallback() {
+        return FallbackSwitch.isRequestFallback();
+    }
+
+    /**
+     * 打开hook点降级开关
+     * 该开关打开后，在当前请求生命周期内，逻辑短路hook点
+     */
+    public static void openHookPointFallback(String className, String method, String methodSign, int hookType) {
+        final double limitRate = EngineManager.getFallbackManager().getHookRateLimiter().getRate();
+        DongTaiLog.debug("HookPoint rate limit! hookType: " + hookType + ", method:" + className + "." + method
+                + ", sign:" + methodSign + " ,rate:" + limitRate);
+//        HookPointRateLimitReport.sendReport(className, method, methodSign, hookType, limitRate);
+        FallbackSwitch.setHeavyHookFallback(true);
     }
 
     public static EngineManager getInstance() {
@@ -85,7 +111,21 @@ public class EngineManager {
         this.supportLazyHook = cfg.isEnableAllHook();
         this.saveBytecode = cfg.isEnableDumpClass();
         this.agentId = agentId;
+        String fallbackVersion = System.getProperty("dongtai.fallback.version", "v2");
+        if ("v2".equals(fallbackVersion)){
+            RemoteConfigUtils.syncRemoteConfigV2(agentId);
+        }else {
+            RemoteConfigUtils.syncRemoteConfig(agentId);
+        }
+        this.fallbackManager = FallbackManager.newInstance(cfg.cfg);
+    }
 
+    public static FallbackManager getFallbackManager() {
+        return instance.fallbackManager;
+    }
+
+    public static void setFallbackManager() {
+        instance.fallbackManager = FallbackManager.updateInstance(PropertyUtils.getInstance().cfg);
     }
 
     /**
@@ -99,10 +139,12 @@ public class EngineManager {
         EngineManager.TAINT_POOL.remove();
         EngineManager.TAINT_HASH_CODES.remove();
         EngineManager.SCOPE_TRACKER.remove();
+        FallbackSwitch.clearHeavyHookFallback();
+        EngineManager.getFallbackManager().getHookRateLimiter().remove();
     }
 
     public static void maintainRequestCount() {
-        EngineManager.reqCounts++;
+        EngineManager.reqCounts.getAndIncrement();
     }
 
     /**
@@ -111,21 +153,23 @@ public class EngineManager {
      * @return 产生的请求数量
      */
     public static int getRequestCount() {
-        return EngineManager.reqCounts;
+        return EngineManager.reqCounts.get();
     }
 
     /**
      * 打开检测引擎
      */
     public static void turnOnEngine() {
-        EngineManager.enableLingzhi = 1;
+        EngineManager.enableDongTai = 1;
+        FallbackSwitch.setPERFORMANCE_FALLBACK(false);
+        FallbackSwitch.setHEAVY_TRAFFIC_LIMIT_FALLBACK(false);
     }
 
     /**
      * 关闭检测引擎
      */
     public static void turnOffEngine() {
-        EngineManager.enableLingzhi = 0;
+        EngineManager.enableDongTai = 0;
     }
 
     /**
@@ -134,7 +178,7 @@ public class EngineManager {
      * @return true - 引擎已启动；false - 引擎未启动
      */
     public static boolean isEngineRunning() {
-        return EngineManager.enableLingzhi == 1;
+        return !FallbackSwitch.isEngineFallback() && EngineManager.enableDongTai == 1;
     }
 
     public boolean supportLazyHook() {
@@ -182,21 +226,44 @@ public class EngineManager {
     }
 
     public static void enterHttpEntry(Map<String, Object> requestMeta) {
+        // 尝试获取请求限速令牌，耗尽时调用断路器方法
+        if (!EngineManager.getFallbackManager().getHeavyTrafficRateLimiter().acquire()) {
+            EngineManager.getFallbackManager().getHeavyTrafficBreaker().breakCheck(null);
+        }
+
         ServiceFactory.startService();
         if (null == SERVER) {
             // todo: read server addr and send to OpenAPI Service
+            String url = null;
+            String protocol = null;
+            if (null != requestMeta.get("serverName")){
+                url = (String) requestMeta.get("serverName");
+            }else {
+                url = "";
+            }
+            if(null != requestMeta.get("protocol")){
+                protocol = (String) requestMeta.get("protocol");
+            }else {
+                protocol = "";
+            }
+
             SERVER = new IastServer(
-                    (String) requestMeta.get("serverName"),
+                    url,
                     (Integer) requestMeta.get("serverPort"),
+                    protocol,
                     true
             );
+            ServerAddressReport serverAddressReport = new ServerAddressReport(EngineManager.SERVER.getServerAddr(),EngineManager.SERVER.getServerPort(),EngineManager.SERVER.getProtocol());
+            serverAddressReport.run();
         }
         Map<String, String> headers = (Map<String, String>) requestMeta.get("headers");
         if (headers.containsKey("dt-traceid")) {
             ContextManager.getOrCreateGlobalTraceId(headers.get("dt-traceid"), EngineManager.getAgentId());
         } else {
             String newTraceId = ContextManager.getOrCreateGlobalTraceId(null, EngineManager.getAgentId());
+            String spanId = ContextManager.getSpanId(newTraceId, EngineManager.getAgentId());
             headers.put("dt-traceid", newTraceId);
+            headers.put("dt-spandid", spanId);
         }
         ENTER_HTTP_ENTRYPOINT.enterEntry();
         REQUEST_CONTEXT.set(requestMeta);
@@ -211,6 +278,11 @@ public class EngineManager {
      * @since 1.2.0
      */
     public static void enterDubboEntry(String dubboService, Map<String, String> attachments) {
+        // 尝试获取请求限速令牌，耗尽时调用断路器方法
+        if (!EngineManager.getFallbackManager().getHeavyTrafficRateLimiter().acquire()) {
+            EngineManager.getFallbackManager().getHeavyTrafficBreaker().breakCheck(null);
+        }
+
         if (attachments != null) {
             if (attachments.containsKey(ContextManager.getHeaderKey())) {
                 ContextManager.getOrCreateGlobalTraceId(attachments.get(ContextManager.getHeaderKey()),
@@ -231,7 +303,10 @@ public class EngineManager {
             }
             if (null == SERVER) {
                 // todo: read server addr and send to OpenAPI Service
-                SERVER = new IastServer(requestHeaders.get("dubbo"), 0, true);
+                SERVER = new IastServer(requestHeaders.get("dubbo"), 0, "TCP",true);
+                String serverAddr = EngineManager.SERVER.getServerAddr();
+                ServerAddressReport serverAddressReport = new ServerAddressReport(serverAddr,0, SERVER.getProtocol());
+                serverAddressReport.run();
             }
             Map<String, Object> requestMeta = new HashMap<String, Object>(12);
             requestMeta.put("protocol", "dubbo/" + requestHeaders.get("dubbo"));
@@ -282,5 +357,25 @@ public class EngineManager {
      */
     public static boolean isFirstLevelDubbo() {
         return SCOPE_TRACKER.isFirstLevelDubbo();
+    }
+
+    public static void leaveKafka() {
+        SCOPE_TRACKER.leaveKafka();
+    }
+
+    public static boolean isExitedKafka() {
+        return SCOPE_TRACKER.isExitedKafka();
+    }
+
+    public static boolean isEnterEntry(String currentFramework) {
+        if (currentFramework != null) {
+            if (currentFramework.equals("DUBBO")) {
+                return EngineManager.isEnterHttp() || SCOPE_TRACKER.get().isFirstLevelGrpc();
+            }
+        }
+        return EngineManager.isEnterHttp()
+                || SCOPE_TRACKER.isFirstLevelDubbo()
+                || SCOPE_TRACKER.get().isFirstLevelGrpc()
+                || !SCOPE_TRACKER.get().isExitedKafka();
     }
 }

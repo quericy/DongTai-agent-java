@@ -3,6 +3,7 @@ package io.dongtai.iast.core.handler.hookpoint.vulscan.normal;
 import io.dongtai.iast.core.handler.hookpoint.models.IastSinkModel;
 import io.dongtai.iast.core.handler.hookpoint.models.MethodEvent;
 import io.dongtai.iast.core.utils.Asserts;
+import io.dongtai.log.DongTaiLog;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,9 +30,17 @@ public class CryptoBadMacVulScan extends AbstractNormalVulScan {
                 if (matcher.find()) {
                     continue;
                 }
-                sendReport(getLatestStack(), sink.getType());
+                StackTraceElement[] latestStack = getLatestStack();
+                for (StackTraceElement stackTraceElement:latestStack){
+                    // 解决 java.security.SecureRandom.getInstance 导致的 weak hash 误报
+                    if (stackTraceElement.toString().startsWith("java.security.SecureRandom.getInstance")){
+                        return;
+                    }
+                }
+                sendReport(latestStack, sink.getType());
                 break;
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                DongTaiLog.error(e);
             }
         }
     }

@@ -21,17 +21,12 @@ public class JspPageAdapter extends AbstractClassVisitor {
     }
 
     @Override
-    public boolean hasTransformed() {
-        return transformed;
-    }
-
-    @Override
     public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
         MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
         if ("_jspService".equals(name)) {
             String iastMethodSignature = AsmUtils.buildSignature(context.getMatchClassName(), name, desc);
             mv = new JspAdviceAdapter(mv, access, name, desc, iastMethodSignature, context);
-            transformed = true;
+            setTransformed();
         }
         return mv;
     }
@@ -45,9 +40,7 @@ public class JspPageAdapter extends AbstractClassVisitor {
         @Override
         public void visitMethodInsn(int opc, String owner, String name, String desc, boolean isInterface) {
             if (owner.endsWith("JspRuntimeLibrary") && "include".equals(name)) {
-                if (DongTaiLog.isDebugEnabled()) {
-                    DongTaiLog.debug("[com.secnium.iast] enter include method" + owner + "." + name);
-                }
+                DongTaiLog.debug("[com.secnium.iast] enter include method" + owner + "." + name);
 
                 int j = newLocal(Type.getType(Object.class));
                 int k = newLocal(Type.getType(Object.class));

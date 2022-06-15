@@ -3,12 +3,9 @@ package io.dongtai.iast.agent;
 import io.dongtai.iast.agent.util.FileUtils;
 import io.dongtai.log.DongTaiLog;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URLDecoder;
 import java.util.Properties;
 
 /**
@@ -22,13 +19,23 @@ public class IastProperties {
     private String serverUrl;
     private String engineName;
     private String projectName;
+    private String clusterName;
+    private String clusterVersion;
     private String proxyEnableStatus;
     private String proxyHost;
     private int proxyPort = -1;
     private Integer isAutoCreateProject;
     private String debugFlag = null;
+    private String isDownloadPackage;
+    private String logPort;
+    private String logAddress;
+    private String fallbackVersion;
 
     private String propertiesFilePath;
+
+    private String customCoreJarUrl;
+    private String customSpyJarUrl;
+    private String customApiJarUrl;
 
     public static IastProperties getInstance() {
         if (null == instance) {
@@ -40,13 +47,14 @@ public class IastProperties {
     private IastProperties() {
         try {
             init();
-        } catch (ClassNotFoundException ignored) {
+        } catch (ClassNotFoundException e) {
+            DongTaiLog.error("io.dongtai.iast.agent.IastProperties.<init>()",e);
         }
     }
 
     public void init() throws ClassNotFoundException {
         try {
-            propertiesFilePath = System.getProperty("java.io.tmpdir") + File.separator + "iast" + File.separator + "iast.properties";
+            propertiesFilePath = System.getProperty("java.io.tmpdir.dongtai") + "iast" + File.separator + "iast.properties";
             FileUtils.getResourceToFile("iast.properties", propertiesFilePath);
 
             InputStream is = IastProperties.class.getClassLoader().getResourceAsStream("iast.properties");
@@ -54,7 +62,7 @@ public class IastProperties {
 
             DongTaiLog.info("DongTai Config: " + propertiesFilePath);
         } catch (IOException e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
         }
     }
 
@@ -105,6 +113,20 @@ public class IastProperties {
             );
         }
         return projectName;
+    }
+
+    public String getClusterName() {
+        if (clusterName == null) {
+            clusterName = System.getProperty("dongtai.cluster.name", cfg.getProperty("dongtai.cluster.name", ""));
+        }
+        return clusterName;
+    }
+
+    public String getClusterVersion() {
+        if (clusterVersion == null) {
+            clusterVersion = System.getProperty("dongtai.cluster.version", cfg.getProperty("dongtai.cluster.version", ""));
+        }
+        return clusterVersion;
     }
 
     private String getProxyEnableStatus() {
@@ -161,11 +183,60 @@ public class IastProperties {
         );
     }
 
+    public String getCustomSpyJarUrl() {
+        if (null == customSpyJarUrl) {
+            customSpyJarUrl = System.getProperty("iast.jar.spy.url", cfg.getProperty("iast.jar.spy.url", ""));
+        }
+        return customSpyJarUrl;
+    }
+
+    public String getCustomCoreJarUrl() {
+        if (null == customCoreJarUrl) {
+            customCoreJarUrl = System.getProperty("iast.jar.core.url", cfg.getProperty("iast.jar.core.url", ""));
+        }
+        return customCoreJarUrl;
+    }
+
+    public String getCustomApiJarUrl() {
+        if (null == customApiJarUrl) {
+            customApiJarUrl = System.getProperty("iast.jar.api.url", cfg.getProperty("iast.jar.api.url", ""));
+        }
+        return customApiJarUrl;
+    }
+
+    public String getIsDownloadPackage() {
+        if (null == isDownloadPackage) {
+            isDownloadPackage = System.getProperty("dongtai.server.package", cfg.getProperty("dongtai.server.package", "true"));
+        }
+        return isDownloadPackage;
+    }
+
     private String getDebugFlag() {
         if (debugFlag == null) {
             debugFlag = System.getProperty("dongtai.debug", "false");
         }
         return debugFlag;
+    }
+
+    public String getLogPort() {
+        if (logPort == null) {
+            logPort = System.getProperty("dongtai.log.port");
+        }
+        return logPort;
+    }
+
+    public String getLogAddress() {
+        if (logAddress == null) {
+            logAddress = System.getProperty("dongtai.log.address");
+        }
+        return logAddress;
+    }
+
+    public String getFallbackVersion() {
+        if (fallbackVersion == null) {
+            fallbackVersion = System.getProperty("dongtai.fallback.version", "v2");
+        }
+        return fallbackVersion;
     }
 
     public boolean isDebug() {

@@ -1,14 +1,21 @@
 package io.dongtai.iast.agent;
 
 import io.dongtai.iast.agent.manager.EngineManager;
-import io.dongtai.iast.agent.monitor.EngineMonitor;
+import io.dongtai.iast.agent.monitor.impl.EngineMonitor;
 import io.dongtai.iast.agent.monitor.MonitorDaemonThread;
 import io.dongtai.iast.agent.report.AgentRegisterReport;
+import io.dongtai.iast.agent.util.FileUtils;
+import io.dongtai.iast.agent.util.ThreadUtils;
 import io.dongtai.log.DongTaiLog;
 
+import java.io.*;
 import java.lang.instrument.Instrumentation;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
+
+import static io.dongtai.iast.agent.Agent.isMacOs;
+import static io.dongtai.iast.agent.Agent.isWindows;
 
 /**
  * @author dongzhiyong@huoxian.cn
@@ -18,6 +25,8 @@ public class AgentLauncher {
     public static final String LAUNCH_MODE_AGENT = "agent";
     public static final String LAUNCH_MODE_ATTACH = "attach";
     public static String LAUNCH_MODE;
+    private static String FLUENT_FILE;
+    private static String FLUENT_FILE_CONF;
 
     static {
         /**
@@ -28,6 +37,21 @@ public class AgentLauncher {
          * fix bug: java.lang.ClassCastException: weblogic.net.http.SOAPHttpsURLConnection cannot be cast to javax.net.ssl.HttpsURLConnection
          */
         System.setProperty("UseSunHttpHandler", "true");
+        if (System.getProperty("java.io.tmpdir.dongtai") == null) {
+            String tmpdir = System.getProperty("java.io.tmpdir");
+            String appName = System.getProperty("dongtai.app.name");
+            String appVersion = System.getProperty("dongtai.app.version");
+            if (tmpdir == null) {
+                tmpdir = File.separator + "tmp";
+            }
+            if (appName == null) {
+                appName = "DemoProject";
+            }
+            if (appVersion == null) {
+                appVersion = "v1.0.0";
+            }
+            System.setProperty("java.io.tmpdir.dongtai", tmpdir + File.separator + appName + "-" + appVersion + "-" + UUID.randomUUID().toString().replaceAll("-", "") + File.separator);
+        }
     }
 
     /**
@@ -44,7 +68,7 @@ public class AgentLauncher {
         try {
             install(inst);
         } catch (Exception e) {
-            e.printStackTrace();
+            DongTaiLog.error(e);
         }
     }
 
@@ -64,7 +88,9 @@ public class AgentLauncher {
             }
             DongTaiLog.info("Engine is about to be uninstalled");
             uninstall();
-            System.setProperty("protect.by.dongtai", null);
+            // attach手动卸载后停止守护线程
+            ThreadUtils.killAllDongTaiThreads();
+            System.clearProperty("protect.by.dongtai");
         } else {
             if (System.getProperty("protect.by.dongtai", null) != null) {
                 DongTaiLog.info("DongTai already installed.");
@@ -84,15 +110,30 @@ public class AgentLauncher {
                 if (argsMap.containsKey("appVersion")) {
                     System.setProperty("dongtai.app.version", argsMap.get("appVersion"));
                 }
+                if (argsMap.containsKey("clusterName")) {
+                    System.setProperty("dongtai.cluster.name", argsMap.get("clusterName"));
+                }
+                if (argsMap.containsKey("clusterVersion")) {
+                    System.setProperty("dongtai.cluster.version", argsMap.get("clusterVersion"));
+                }
                 if (argsMap.containsKey("dongtaiServer")) {
                     System.setProperty("dongtai.server.url", argsMap.get("dongtaiServer"));
                 }
                 if (argsMap.containsKey("dongtaiToken")) {
                     System.setProperty("dongtai.server.token", argsMap.get("dongtaiToken"));
                 }
+                if (argsMap.containsKey("serverPackage")) {
+                    System.setProperty("dongtai.server.package", argsMap.get("serverPackage"));
+                }
+                if (argsMap.containsKey("logLevel")) {
+                    System.setProperty("dongtai.log.level", argsMap.get("logLevel"));
+                }
+                if (argsMap.containsKey("logPath")) {
+                    System.setProperty("dongtai.log.path", argsMap.get("logPath"));
+                }
                 install(inst);
             } catch (Exception e) {
-                e.printStackTrace();
+                DongTaiLog.error(e);
             }
         }
     }
@@ -113,15 +154,15 @@ public class AgentLauncher {
      * @param inst inst
      */
     private static void install(final Instrumentation inst) {
-        IastProperties iastProperties = IastProperties.getInstance();
-        DongTaiLog.info("DongTai Agent Version: {}, DongTai Server: {}", Constant.AGENT_VERSION_VALUE, iastProperties.getBaseUrl());
+        IastProperties.getInstance();
         Boolean send = AgentRegisterReport.send();
         if (send) {
+            extractFluent();
             DongTaiLog.info("Agent registered successfully.");
             Boolean agentStat = AgentRegisterReport.agentStat();
             if (!agentStat) {
                 EngineMonitor.isCoreRegisterStart = false;
-                DongTaiLog.info("Agent wait for confirm.");
+                DongTaiLog.info("Detection engine not started, agent waiting to be audited.");
             } else {
                 EngineMonitor.isCoreRegisterStart = true;
             }
@@ -130,6 +171,41 @@ public class AgentLauncher {
             System.setProperty("protect.by.dongtai", "true");
         } else {
             DongTaiLog.error("Agent registered failed. Start without DongTai IAST.");
+        }
+    }
+
+    private static void doFluent() {
+        String[] execution = {
+                "nohup",
+                FLUENT_FILE,
+                "-c",
+                FLUENT_FILE_CONF
+        };
+        try {
+            Runtime.getRuntime().exec(execution);
+        } catch (IOException e) {
+            DongTaiLog.error(e);
+        }
+    }
+
+    private static void extractFluent() {
+        try {
+            if (!isMacOs() && !isWindows()) {
+                FLUENT_FILE = System.getProperty("java.io.tmpdir.dongtai") + "iast" + File.separator + "fluent";
+                FileUtils.getResourceToFile("bin/fluent", FLUENT_FILE);
+
+                FLUENT_FILE_CONF = System.getProperty("java.io.tmpdir.dongtai") + "iast" + File.separator + "fluent.conf";
+                FileUtils.getResourceToFile("bin/fluent.conf", FLUENT_FILE_CONF);
+                FileUtils.confReplace(FLUENT_FILE_CONF);
+                if ((new File(FLUENT_FILE)).setExecutable(true)) {
+                    DongTaiLog.info("fluent extract success.");
+                } else {
+                    DongTaiLog.info("fluent extract failure. please set execute permission, file: {}", FLUENT_FILE);
+                }
+                doFluent();
+            }
+        } catch (IOException e) {
+            DongTaiLog.error(e);
         }
     }
 
@@ -143,7 +219,7 @@ public class AgentLauncher {
 
         agentMonitorDaemonThread.setDaemon(true);
         agentMonitorDaemonThread.setPriority(1);
-        agentMonitorDaemonThread.setName(Constant.THREAD_PREFIX + "-monitor");
+        agentMonitorDaemonThread.setName(Constant.THREAD_PREFIX + "MonitorDaemon");
         agentMonitorDaemonThread.start();
     }
 

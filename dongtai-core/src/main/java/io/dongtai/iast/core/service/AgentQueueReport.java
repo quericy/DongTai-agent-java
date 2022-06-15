@@ -26,6 +26,8 @@ public class AgentQueueReport implements Runnable {
         detail.put(ReportConstant.REPORT_QUEUE, 0);
         detail.put(ReportConstant.METHOD_QUEUE, 0);
         detail.put(ReportConstant.REPLAY_QUEUE, 0);
+        detail.put(ReportConstant.KEY_CORE_INSTALLED, 1);
+        detail.put(ReportConstant.KEY_CORE_RUNNING, EngineManager.isEngineRunning() ? 1 : 0);
         detail.put(ReportConstant.KEY_RETURN_QUEUE, 1);
 
         return report.toString();
@@ -33,13 +35,15 @@ public class AgentQueueReport implements Runnable {
 
     @Override
     public void run() {
-        try {
-            StringBuilder replayRequestRaw = HttpClientUtils.sendPost(Constants.API_REPORT_UPLOAD, generateHeartBeatMsg());
-            ThreadPools.submitReplayTask(replayRequestRaw);
-        } catch (IOException e) {
-            DongTaiLog.error("send agent status failure, reason: {}", e);
-        } catch (Exception e) {
-            DongTaiLog.error("send API Queue to {} error, reason: {}", Constants.API_REPORT_UPLOAD, e);
+        if (EngineManager.isEngineRunning()){
+            try {
+                StringBuilder replayRequestRaw = HttpClientUtils.sendPost(Constants.API_REPORT_UPLOAD, generateHeartBeatMsg());
+                if (EngineManager.isEngineRunning()){
+                    ThreadPools.submitReplayTask(replayRequestRaw);
+                }
+            } catch (Exception e) {
+                DongTaiLog.debug("send API Queue to {} error, reason: {}", Constants.API_REPORT_UPLOAD, e);
+            }
         }
     }
 }

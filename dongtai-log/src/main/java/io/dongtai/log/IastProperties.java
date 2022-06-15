@@ -13,7 +13,7 @@ public class IastProperties {
     private static String dongtaiLogPath;
     private static String dongtaiLogLevel;
 
-    public static String enableLogFile() {
+    public static String enablePrintLog() {
         if (dongtaiLog == null) {
             dongtaiLog = System.getProperty("dongtai.log", "true");
         }
@@ -22,7 +22,7 @@ public class IastProperties {
 
     public static String getLogPath() {
         if (dongtaiLogPath == null) {
-            dongtaiLogPath = System.getProperty("dongtai.log.path", "logs");
+            dongtaiLogPath = System.getProperty("dongtai.log.path", System.getProperty("java.io.tmpdir.dongtai")+File.separator+"dongtaiJavaAgentLogs");
         }
         return dongtaiLogPath;
     }

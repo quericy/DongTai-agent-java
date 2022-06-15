@@ -8,7 +8,6 @@ import io.dongtai.iast.core.bytecode.enhance.plugin.PluginRegister;
 import io.dongtai.iast.core.bytecode.sca.ScaScanner;
 import io.dongtai.iast.core.handler.hookpoint.SpyDispatcherImpl;
 import io.dongtai.iast.core.handler.hookpoint.models.IastHookRuleModel;
-import io.dongtai.iast.core.service.ErrorLogReport;
 import io.dongtai.iast.core.utils.AsmUtils;
 import io.dongtai.iast.core.utils.PropertyUtils;
 import io.dongtai.iast.core.utils.matcher.ConfigMatcher;
@@ -47,7 +46,6 @@ public class IastClassFileTransformer implements ClassFileTransformer {
     private final PluginRegister plugins;
     private static IastClassFileTransformer INSTANCE;
     private final IastHookRuleModel hookRuleModel;
-    private final StopWatch matchClock = new StopWatch();
 
     /**
      * Gets a singleton object
@@ -64,7 +62,6 @@ public class IastClassFileTransformer implements ClassFileTransformer {
     }
 
     IastClassFileTransformer(Instrumentation inst) {
-        matchClock.start();
         this.inst = inst;
         this.isDumpClass = EngineManager.getInstance().isEnableDumpClass();
         this.properties = PropertyUtils.getInstance();
@@ -75,11 +72,6 @@ public class IastClassFileTransformer implements ClassFileTransformer {
         this.hookRuleModel = IastHookRuleModel.getInstance();
 
         SpyDispatcherHandler.setDispatcher(new SpyDispatcherImpl());
-        matchClock.suspend();
-    }
-
-    public Long getTransformTime() {
-        return matchClock.getTime();
     }
 
     public int getTransformCount() {
@@ -122,10 +114,9 @@ public class IastClassFileTransformer implements ClassFileTransformer {
         if (internalClassName == null || internalClassName.startsWith("io/dongtai/") || internalClassName.startsWith("com/secnium/iast/") || internalClassName.startsWith("java/lang/iast/") || internalClassName.startsWith("cn/huoxian/iast/")) {
             return null;
         }
-        matchClock.resume();
-        boolean isRunning = EngineManager.isLingzhiRunning();
+        boolean isRunning = EngineManager.isDongTaiRunning();
         if (isRunning) {
-            EngineManager.turnOffLingzhi();
+            EngineManager.turnOffDongTai();
         }
 
         try {
@@ -167,14 +158,15 @@ public class IastClassFileTransformer implements ClassFileTransformer {
                         return dumpClassIfNecessary(cr.getClassName(), cw.toByteArray(), srcByteCodeArray);
                     }
                 }
+                sourceCodeBak = null;
             }
         } catch (
-                Throwable ignore) {
+                Throwable throwable) {
+            DongTaiLog.debug(throwable);
         } finally {
             if (isRunning) {
-                EngineManager.turnOnLingzhi();
+                EngineManager.turnOnDongTai();
             }
-            matchClock.suspend();
         }
 
         return null;
@@ -220,7 +212,7 @@ public class IastClassFileTransformer implements ClassFileTransformer {
         if (javaClassName.lastIndexOf('.') == -1) {
             filename = javaClassName;
         } else {
-            path = path + javaClassName.substring(0, javaClassName.lastIndexOf('.')) + "/";
+            path = path + javaClassName.substring(0, javaClassName.lastIndexOf('.')) + File.separator;
             filename = javaClassName.substring(javaClassName.lastIndexOf('.') + 1);
         }
         try {
@@ -235,9 +227,7 @@ public class IastClassFileTransformer implements ClassFileTransformer {
 
             writeByteArrayToFile(enhancedClass, data);
             writeByteArrayToFile(originalClass, originalData);
-            if (DongTaiLog.isDebugEnabled()) {
-                DongTaiLog.debug("dump class {} to {} success.", className, enhancedClass);
-            }
+            DongTaiLog.trace("dump class {} to {} success.", className, enhancedClass);
         } catch (IOException e) {
             DongTaiLog.error("dump class {} failed. reason: {}", className, e);
         }
@@ -294,10 +284,8 @@ public class IastClassFileTransformer implements ClassFileTransformer {
                 // 所以当尝试获取这个类更多详细信息的时候会引起关联类的ClassNotFoundException等未知的错误（取决于底层ClassLoader的实现）
                 // 这里没有办法穷举出所有的异常情况，所以catch Throwable来完成异常容灾处理
                 // 当解析类出现异常的时候，直接简单粗暴的认为根本没有这个类就好了
-                if (DongTaiLog.isDebugEnabled()) {
-                    DongTaiLog.debug("remove from findForReTransform, because loading class:" + clazz.getName()
-                            + " occur an exception", cause);
-                }
+                DongTaiLog.trace("remove from findForReTransform, because loading class:" + clazz.getName()
+                        + " occur an exception", cause);
             }
         }
         Class<?>[] classes = new Class[enhanceClassSize];
@@ -312,7 +300,7 @@ public class IastClassFileTransformer implements ClassFileTransformer {
         StopWatch stopWatch = new StopWatch();
         stopWatch.start();
         Class<?>[] waitingReTransformClasses = findForRetransform();
-        DongTaiLog.info("find {} classes to reTransform, time: {}", waitingReTransformClasses.length, stopWatch.getTime());
+        DongTaiLog.debug("find {} classes to reTransform, time: {}", waitingReTransformClasses.length, stopWatch.getTime());
         // fixme: Performance Loss Calculation, 6752 * 50ms = 337600ms, 337s, 6-7min
         for (Class<?> clazz : waitingReTransformClasses) {
             try {
@@ -320,11 +308,12 @@ public class IastClassFileTransformer implements ClassFileTransformer {
             } catch (InternalError ignored) {
             } catch (Exception e) {
                 DongTaiLog.error("transform class failure, class: {}, reason: {}", clazz.getCanonicalName(), e.getMessage());
-                e.printStackTrace();
+                DongTaiLog.error(e);
             }
         }
         stopWatch.stop();
-        DongTaiLog.info("finish reTransform, class count: {}, time: {}, transform time: {}", getTransformCount(), stopWatch.getTime(), getTransformTime());
+        DongTaiLog.debug("finish reTransform, class count: {}, time: {}", getTransformCount(), stopWatch.getTime());
     }
 
 }
+

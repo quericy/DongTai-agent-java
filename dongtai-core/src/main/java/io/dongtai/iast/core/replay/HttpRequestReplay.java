@@ -1,10 +1,12 @@
 package io.dongtai.iast.core.replay;
 
+import io.dongtai.iast.core.EngineManager;
 import io.dongtai.iast.core.handler.hookpoint.models.IastReplayModel;
 import io.dongtai.iast.core.utils.HttpClientHostnameVerifier;
 import io.dongtai.iast.core.utils.HttpClientUtils;
 import io.dongtai.iast.core.utils.HttpMethods;
 import io.dongtai.iast.core.utils.base64.Base64Decoder;
+import io.dongtai.log.DongTaiLog;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -57,7 +59,7 @@ public class HttpRequestReplay implements Runnable {
                 sendRequest(replayModel.getRequestMethod(), url, replayModel.getRequestBody(), headers);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            DongTaiLog.error("io.dongtai.iast.core.replay.HttpRequestReplay.doReplay(io.dongtai.iast.core.handler.hookpoint.models.IastReplayModel)",e);
         }
     }
 
@@ -89,7 +91,8 @@ public class HttpRequestReplay implements Runnable {
      * @param headers http请求的header头
      * @throws Exception http请求中抛出的异常
      */
-    private static void sendRequest(String method, String fullUrl, String data, HashMap<String, String> headers) throws Exception {
+    private static void sendRequest(String method, String fullUrl, String data, HashMap<String, String> headers) {
+        DongTaiLog.debug("Do request replay: method={},url={},data={},header={}",method,fullUrl,data,headers.toString());
         HttpURLConnection connection = null;
         try {
             HttpClientUtils.trustAllHosts();
@@ -128,8 +131,9 @@ public class HttpRequestReplay implements Runnable {
                 response.append('\r');
             }
             rd.close();
+            DongTaiLog.debug("Request replay response: {}",response);
         } catch (Exception e) {
-            throw e;
+            DongTaiLog.error("io.dongtai.iast.core.replay.HttpRequestReplay.sendRequest(java.lang.String,java.lang.String,java.lang.String,java.util.HashMap<java.lang.String,java.lang.String>)",e);
         } finally {
             if (connection != null) {
                 connection.disconnect();

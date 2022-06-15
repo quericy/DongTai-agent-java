@@ -5,13 +5,13 @@
     <parent>
         <artifactId>iast</artifactId>
         <groupId>io.dongtai.iast</groupId>
-        <version>1.3.1</version>
+        <version>1.7.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>cn.huoxian.iast</groupId>
     <artifactId>dongtai-spring-api</artifactId>
-    <version>1.3.1</version>
+    <version>1.7.0</version>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
@@ -22,13 +22,13 @@
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-webmvc</artifactId>
-            <version>5.2.8.RELEASE</version>
+            <version>5.3.19</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>io.dongtai.iast</groupId>
             <artifactId>dongtai-log</artifactId>
-            <version>1.3.1</version>
+            <version>1.7.0</version>
         </dependency>
     </dependencies>
 
